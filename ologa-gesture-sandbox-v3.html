@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>OLOGA — Sandbox de Gestos v3</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    font-family: 'Courier New', monospace;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+    height: 100%;
+    width: 100%;
+    position: fixed;
+  }
+  #app {
+    display: flex;
+    height: 100vh;
+    height: 100dvh;
+    width: 100vw;
+    width: 100dvw;
+  }
+  #canvas-area {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #gesture-canvas {
+    flex: 1;
+    background: #111;
+    cursor: crosshair;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #canvas-overlay {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    pointer-events: none;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.6;
+    z-index: 10;
+  }
+  #gesture-status {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    pointer-events: none;
+    font-size: 11px;
+    color: #4ecdc4;
+    text-align: right;
+    line-height: 1.5;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 10;
+  }
+  #gesture-status.active { opacity: 1; }
+  #gesture-status .timeout-bar {
+    width: 120px;
+    height: 2px;
+    background: #222;
+    margin-top: 6px;
+    position: relative;
+  }
+  #gesture-status .timeout-fill {
+    height: 100%;
+    background: #ff6b6b;
+    width: 0%;
+    transition: width 0.1s linear;
+  }
+  #sidebar {
+    width: 420px;
+    background: #141414;
+    border-left: 1px solid #222;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  #sidebar h2 {
+    padding: 16px 20px;
+    font-size: 13px;
+    font-weight: normal;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #888;
+    border-bottom: 1px solid #222;
+    flex-shrink: 0;
+  }
+  #realtime-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #aaa;
+    -webkit-overflow-scrolling: touch;
+  }
+  #realtime-log .event-line {
+    border-bottom: 1px solid #1a1a1a;
+    padding: 2px 0;
+  }
+  #realtime-log .highlight {
+    color: #ff6b6b;
+  }
+  #realtime-log .phase {
+    color: #4ecdc4;
+  }
+  #realtime-log .stroke-divider {
+    color: #666;
+    border-bottom: 1px solid #333;
+    padding: 4px 0;
+    margin-top: 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  #summary-area {
+    border-top: 1px solid #222;
+    padding: 16px 20px;
+    max-height: 35vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+  }
+  #summary-area h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #888;
+    margin-bottom: 12px;
+  }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 11px;
+    border-bottom: 1px solid #1a1a1a;
+  }
+  .stat-label { color: #666; }
+  .stat-value { color: #e0e0e0; }
+  .stat-value.alert { color: #ff6b6b; }
+  .stat-value.ok { color: #4ecdc4; }
+  #controls {
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    border-top: 1px solid #222;
+    flex-shrink: 0;
+  }
+  button {
+    flex: 1;
+    padding: 10px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    color: #aaa;
+    font-family: inherit;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  button:hover, button:active {
+    background: #222;
+    border-color: #555;
+    color: #fff;
+  }
+  button.primary {
+    border-color: #4ecdc4;
+    color: #4ecdc4;
+  }
+  button.primary:hover, button.primary:active {
+    background: #4ecdc4;
+    color: #0a0a0a;
+  }
+  #export-area {
+    padding: 12px 20px;
+    border-top: 1px solid #222;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  #export-area a, #export-area button.link {
+    color: #4ecdc4;
+    text-decoration: none;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #mini-preview {
+    width: 100%;
+    height: 100px;
+    background: #0a0a0a;
+    border-top: 1px solid #222;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  #mini-preview img {
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain;
+  }
+  #gesture-path {
+    display: none;
+  }
+  .empty-state {
+    color: #333;
+    font-size: 11px;
+    text-align: center;
+    padding: 40px 20px;
+  }
+  @media (max-width: 768px) {
+    #app { flex-direction: column; }
+    #sidebar { width: 100%; height: 45vh; border-left: none; border-top: 1px solid #222; }
+    #canvas-area { height: 55vh; }
+    #canvas-overlay { font-size: 10px; top: 10px; left: 10px; }
+    #gesture-status { font-size: 10px; top: 10px; right: 10px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-area">
+    <canvas id="gesture-canvas"></canvas>
+    <div id="canvas-overlay">
+      DIBUJÁ UN GESTO<br>
+      Podés levantar el dedo y seguir<br>
+      El gesto termina tras 2s de inactividad
+    </div>
+    <div id="gesture-status">
+      <div id="status-text">TRAZO 1 · 0 puntos</div>
+      <div class="timeout-bar"><div class="timeout-fill" id="timeout-fill"></div></div>
+      <div style="font-size:10px; color:#666; margin-top:4px;">Esperando más trazos...</div>
+    </div>
+  </div>
+  <div id="sidebar">
+    <h2>Narración en tiempo real</h2>
+    <div id="realtime-log">
+      <div class="empty-state">Esperando gesto...</div>
+    </div>
+    <div id="summary-area">
+      <h3>Resumen del gesto</h3>
+      <div id="summary-content">
+        <div class="empty-state">El gesto finaliza tras 2s de inactividad</div>
+      </div>
+    </div>
+    <div id="mini-preview"></div>
+    <div id="controls">
+      <button id="btn-clear">Borrar</button>
+      <button id="btn-finish" class="primary">Finalizar gesto</button>
+    </div>
+    <div id="export-area"></div>
+  </div>
+</div>
+
+<canvas id="gesture-path" width="800" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById('gesture-canvas');
+const ctx = canvas.getContext('2d');
+const pathCanvas = document.getElementById('gesture-path');
+const pathCtx = pathCanvas.getContext('2d');
+const logEl = document.getElementById('realtime-log');
+const summaryEl = document.getElementById('summary-content');
+const exportArea = document.getElementById('export-area');
+const miniPreview = document.getElementById('mini-preview');
+const statusEl = document.getElementById('gesture-status');
+const statusText = document.getElementById('status-text');
+const timeoutFill = document.getElementById('timeout-fill');
+
+const FINISH_TIMEOUT = 2000;
+
+let isDrawing = false;
+let points = [];
+let strokes = [];
+let currentStrokeIdx = -1;
+let logLines = [];
+let lastLogTime = 0;
+let finishTimer = null;
+let gestureActive = false;
+let gestureStartTime = 0;
+let analysisData = null;
+let activePointerId = null;
+
+function resizeCanvas() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.strokeStyle = '#e0e0e0';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function clearAll() {
+  points = [];
+  strokes = [];
+  currentStrokeIdx = -1;
+  logLines = [];
+  analysisData = null;
+  activePointerId = null;
+  if (finishTimer) clearTimeout(finishTimer);
+  finishTimer = null;
+  gestureActive = false;
+  isDrawing = false;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  logEl.innerHTML = '<div class="empty-state">Esperando gesto...</div>';
+  summaryEl.innerHTML = '<div class="empty-state">El gesto finaliza tras 2s de inactividad</div>';
+  exportArea.innerHTML = '';
+  miniPreview.innerHTML = '';
+  statusEl.classList.remove('active');
+  statusText.textContent = '';
+  timeoutFill.style.width = '0%';
+}
+
+function getPointerPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  return {
+    x: (e.clientX - rect.left),
+    y: (e.clientY - rect.top),
+    t: performance.now()
+  };
+}
+
+function dist(a, b) {
+  return Math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2);
+}
+
+function angle(a, b) {
+  return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+}
+
+function addLog(text, type = '') {
+  const now = performance.now();
+  if (now - lastLogTime < 30 && type !== 'highlight' && type !== 'phase' && type !== 'stroke-divider') return;
+  lastLogTime = now;
+
+  if (logLines.length === 0 && logEl.querySelector('.empty-state')) {
+    logEl.innerHTML = '';
+  }
+
+  const div = document.createElement('div');
+  div.className = 'event-line' + (type ? ' ' + type : '');
+  div.textContent = text;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+  logLines.push(text);
+  if (logLines.length > 300) {
+    logEl.removeChild(logEl.firstChild);
+    logLines.shift();
+  }
+}
+
+function updateStatus() {
+  if (!gestureActive) {
+    statusEl.classList.remove('active');
+    return;
+  }
+  statusEl.classList.add('active');
+  const totalPoints = points.length;
+  const strokeCount = strokes.length;
+  const elapsed = points.length > 0 ? (points[points.length-1].t - gestureStartTime).toFixed(0) : '0';
+  statusText.textContent = `TRAZO ${strokeCount} · ${totalPoints}pts · ${elapsed}ms`;
+}
+
+function startFinishTimer() {
+  if (finishTimer) clearTimeout(finishTimer);
+
+  let remaining = FINISH_TIMEOUT;
+  const start = performance.now();
+
+  function tick() {
+    if (!gestureActive || isDrawing) return;
+    const elapsed = performance.now() - start;
+    remaining = FINISH_TIMEOUT - elapsed;
+
+    if (remaining <= 0) {
+      timeoutFill.style.width = '100%';
+      finishGesture();
+      return;
+    }
+
+    timeoutFill.style.width = `${((FINISH_TIMEOUT - remaining) / FINISH_TIMEOUT) * 100}%`;
+    requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
+
+  finishTimer = setTimeout(() => {
+    if (!isDrawing && gestureActive) finishGesture();
+  }, FINISH_TIMEOUT);
+}
+
+function cancelFinishTimer() {
+  if (finishTimer) {
+    clearTimeout(finishTimer);
+    finishTimer = null;
+  }
+  timeoutFill.style.width = '0%';
+}
+
+function finishGesture() {
+  if (!gestureActive) return;
+  gestureActive = false;
+  isDrawing = false;
+  activePointerId = null;
+  if (finishTimer) clearTimeout(finishTimer);
+  finishTimer = null;
+  timeoutFill.style.width = '0%';
+  statusEl.classList.remove('active');
+
+  addLog(`─── GESTO FINALIZADO ───`, 'phase');
+  addLog(`${strokes.length} trazo(s) · ${points.length} puntos · ${((points[points.length-1].t - points[0].t)/1000).toFixed(2)}s`, 'highlight');
+
+  analyzeGesture();
+}
+
+// ========== ANÁLISIS GEOMÉTRICO ==========
+
+function segmentsIntersect(p1, p2, p3, p4) {
+  const d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
+  if (Math.abs(d) < 0.001) return null;
+  const ua = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / d;
+  const ub = ((p2.x - p1.x) * (p1.y - p3.y) - (p2.y - p1.y) * (p1.x - p3.x)) / d;
+  if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+    return {
+      x: p1.x + ua * (p2.x - p1.x),
+      y: p1.y + ua * (p2.y - p1.y),
+      t: (p1.t + p2.t) / 2
+    };
+  }
+  return null;
+}
+
+function findIntersections(pts) {
+  const intersections = [];
+  if (pts.length < 10) return intersections;
+  for (let i = 0; i < pts.length - 11; i++) {
+    for (let j = i + 10; j < pts.length - 1; j++) {
+      const inter = segmentsIntersect(pts[i], pts[i+1], pts[j], pts[j+1]);
+      if (inter) {
+        const tooClose = intersections.some(ix => dist(ix, inter) < 15);
+        if (!tooClose) intersections.push(inter);
+      }
+    }
+  }
+  return intersections;
+}
+
+function findLoops(pts) {
+  const loops = [];
+  if (pts.length < 20) return loops;
+  for (let i = 0; i < pts.length - 20; i++) {
+    for (let j = i + 15; j < Math.min(i + 300, pts.length); j++) {
+      if (dist(pts[i], pts[j]) < 25) {
+        const loopPts = pts.slice(i, j);
+        const perimeter = loopPts.reduce((sum, p, idx) => {
+          if (idx === 0) return 0;
+          return sum + dist(loopPts[idx-1], p);
+        }, 0);
+        const area = Math.abs(loopPts.reduce((sum, p, idx) => {
+          if (idx === 0) return 0;
+          return sum + (loopPts[idx-1].x * p.y - p.x * loopPts[idx-1].y);
+        }, 0)) / 2;
+        if (perimeter > 50 && area > 300) {
+          loops.push({ start: i, end: j, center: pts[i], perimeter, area });
+          break;
+        }
+      }
+    }
+  }
+  return loops.filter((l, i, arr) => {
+    return !arr.slice(0, i).some(prev => Math.abs(prev.start - l.start) < 30);
+  });
+}
+
+function analyzePhases(pts) {
+  if (pts.length < 5) return [];
+  const phases = [];
+  let current = { start: 0, type: 'inicio', speeds: [], curvatures: [] };
+
+  for (let i = 1; i < pts.length - 1; i++) {
+    const dt = Math.max(0.001, (pts[i].t - pts[i-1].t));
+    const v = dist(pts[i], pts[i-1]) / dt;
+    const a1 = angle(pts[i-1], pts[i]);
+    const a2 = angle(pts[i], pts[i+1]);
+    let curvature = Math.abs(a2 - a1);
+    if (curvature > 180) curvature = 360 - curvature;
+
+    current.speeds.push(v);
+    current.curvatures.push(curvature);
+
+    if (current.speeds.length > 12) {
+      const avgSpeed = current.speeds.reduce((a,b)=>a+b,0) / current.speeds.length;
+      const avgCurve = current.curvatures.reduce((a,b)=>a+b,0) / current.curvatures.length;
+
+      let type = 'curva';
+      if (avgCurve < 12) type = 'linea';
+      else if (avgCurve > 50 && avgSpeed > 2) type = 'rulo';
+      else if (avgSpeed < 0.5) type = 'pausa';
+      else if (avgSpeed > 6) type = 'rapido';
+
+      if (type !== current.type && current.speeds.length > 8) {
+        phases.push({...current, end: i, avgSpeed, avgCurve});
+        current = { start: i, type, speeds: [v], curvatures: [curvature] };
+      }
+    }
+  }
+  phases.push({...current, end: pts.length - 1});
+  return phases.map((p, i) => ({
+    ...p,
+    label: `FASE ${i+1}: ${p.type.toUpperCase()}`,
+    duration: ((pts[p.end].t - pts[p.start].t) / 1000).toFixed(2),
+    relStart: (p.start / pts.length).toFixed(2),
+    relEnd: (p.end / pts.length).toFixed(2),
+    pointCount: p.end - p.start
+  }));
+}
+
+function analyzeStrokeMetadata(strokesArr) {
+  return strokesArr.map((stroke, i) => {
+    if (stroke.length < 2) return null;
+    const len = stroke.reduce((sum, p, idx) => idx === 0 ? 0 : sum + dist(stroke[idx-1], p), 0);
+    const duration = (stroke[stroke.length-1].t - stroke[0].t) / 1000;
+    const straightDist = dist(stroke[0], stroke[stroke.length-1]);
+    const rectitude = straightDist / Math.max(len, 1);
+    return {
+      strokeIndex: i + 1,
+      pointCount: stroke.length,
+      length: Math.round(len),
+      duration: parseFloat(duration.toFixed(3)),
+      rectitude: parseFloat(rectitude.toFixed(3)),
+      startPos: { x: Math.round(stroke[0].x), y: Math.round(stroke[0].y) },
+      endPos: { x: Math.round(stroke[stroke.length-1].x), y: Math.round(stroke[stroke.length-1].y) },
+      isDot: len < 8 && duration < 0.3
+    };
+  }).filter(Boolean);
+}
+
+function analyzeGesture() {
+  if (points.length < 2) return;
+
+  const totalTime = (points[points.length-1].t - points[0].t) / 1000;
+  const totalLength = points.reduce((sum, p, i) => i === 0 ? 0 : sum + dist(points[i-1], p), 0);
+  const straightDist = dist(points[0], points[points.length-1]);
+  const straightness = straightDist / Math.max(totalLength, 1);
+
+  const bbox = {
+    minX: Math.min(...points.map(p => p.x)),
+    maxX: Math.max(...points.map(p => p.x)),
+    minY: Math.min(...points.map(p => p.y)),
+    maxY: Math.max(...points.map(p => p.y))
+  };
+  const width = bbox.maxX - bbox.minX;
+  const height = bbox.maxY - bbox.minY;
+  const area = width * height;
+  const density = totalLength / Math.max(area, 1);
+
+  const intersections = findIntersections(points);
+  const loops = findLoops(points);
+  const phases = analyzePhases(points);
+  const strokeMeta = analyzeStrokeMetadata(strokes);
+
+  const speeds = points.slice(1).map((p, i) => {
+    const dt = Math.max(0.001, (p.t - points[i].t) / 1000);
+    return dist(p, points[i]) / dt;
+  });
+  const avgSpeed = speeds.reduce((a,b) => a+b, 0) / speeds.length;
+  const maxSpeed = Math.max(...speeds, 0);
+  const minSpeed = Math.min(...speeds, Infinity);
+
+  const angles = points.slice(1).map((p, i) => angle(points[i], p));
+  const angleChanges = angles.slice(1).map((a, i) => {
+    let diff = Math.abs(a - angles[i]);
+    return diff > 180 ? 360 - diff : diff;
+  });
+  const avgAngleChange = angleChanges.length > 0 ? angleChanges.reduce((a,b) => a+b, 0) / angleChanges.length : 0;
+  const sharpTurns = angleChanges.filter(a => a > 45).length;
+  const smoothCurves = angleChanges.filter(a => a > 15 && a <= 45).length;
+
+  const centroidX = points.reduce((s,p) => s+p.x, 0) / points.length;
+  const centroidY = points.reduce((s,p) => s+p.y, 0) / points.length;
+
+  const quadrants = [0,0,0,0];
+  points.forEach(p => {
+    const qx = p.x < centroidX ? 0 : 1;
+    const qy = p.y < centroidY ? 0 : 1;
+    quadrants[qx + qy*2]++;
+  });
+  const total = points.length;
+  const entropy = -quadrants.reduce((sum, q) => {
+    const p = q / total;
+    return p > 0 ? sum + p * Math.log2(p) : sum;
+  }, 0);
+
+  // Dibujar en canvas de path para exportar
+  const padding = 40;
+  pathCanvas.width = Math.max(400, width + padding * 2);
+  pathCanvas.height = Math.max(300, height + padding * 2);
+  pathCtx.clearRect(0, 0, pathCanvas.width, pathCanvas.height);
+
+  const offsetX = padding - bbox.minX;
+  const offsetY = padding - bbox.minY;
+
+  const colors = ['#ffffff', '#cccccc', '#aaaaaa', '#888888'];
+  strokes.forEach((stroke, si) => {
+    pathCtx.strokeStyle = colors[si % colors.length];
+    pathCtx.lineWidth = 4;
+    pathCtx.lineCap = 'round';
+    pathCtx.lineJoin = 'round';
+    pathCtx.beginPath();
+    stroke.forEach((p, i) => {
+      if (i === 0) pathCtx.moveTo(p.x + offsetX, p.y + offsetY);
+      else pathCtx.lineTo(p.x + offsetX, p.y + offsetY);
+    });
+    pathCtx.stroke();
+  });
+
+  pathCtx.fillStyle = '#ff6b6b';
+  intersections.forEach(ix => {
+    pathCtx.beginPath();
+    pathCtx.arc(ix.x + offsetX, ix.y + offsetY, 7, 0, Math.PI * 2);
+    pathCtx.fill();
+  });
+
+  pathCtx.strokeStyle = '#4ecdc4';
+  pathCtx.lineWidth = 3;
+  loops.forEach(loop => {
+    const lp = points.slice(loop.start, loop.end);
+    pathCtx.beginPath();
+    lp.forEach((p, i) => {
+      if (i === 0) pathCtx.moveTo(p.x + offsetX, p.y + offsetY);
+      else pathCtx.lineTo(p.x + offsetX, p.y + offsetY);
+    });
+    pathCtx.stroke();
+  });
+
+  const pngUrl = pathCanvas.toDataURL('image/png');
+
+  analysisData = {
+    timestamp: new Date().toISOString(),
+    gesture: {
+      totalStrokes: strokes.length,
+      totalPoints: points.length,
+      totalDuration: parseFloat(totalTime.toFixed(3)),
+      totalLength: Math.round(totalLength),
+      straightness: parseFloat(straightness.toFixed(3)),
+      avgSpeed: parseFloat(avgSpeed.toFixed(2)),
+      maxSpeed: parseFloat(maxSpeed.toFixed(2)),
+      minSpeed: parseFloat(minSpeed.toFixed(2)),
+      avgAngleChange: parseFloat(avgAngleChange.toFixed(1)),
+      sharpTurns,
+      smoothCurves,
+      intersections: intersections.length,
+      loops: loops.length,
+      bbox: {
+        width: Math.round(width),
+        height: Math.round(height),
+        area: Math.round(area),
+        density: parseFloat(density.toFixed(4))
+      },
+      entropy: parseFloat(entropy.toFixed(2)),
+      aspectRatio: parseFloat((width/Math.max(height,1)).toFixed(2)),
+      centroid: { x: Math.round(centroidX), y: Math.round(centroidY) },
+      startPos: { x: Math.round(points[0].x), y: Math.round(points[0].y) },
+      endPos: { x: Math.round(points[points.length-1].x), y: Math.round(points[points.length-1].y) }
+    },
+    strokes: strokeMeta,
+    phases: phases,
+    intersections: intersections.map(ix => ({ x: Math.round(ix.x), y: Math.round(ix.y), t: Math.round(ix.t) })),
+    loops: loops.map(l => ({ startIdx: l.start, endIdx: l.end, area: Math.round(l.area), perimeter: Math.round(l.perimeter) })),
+    rawNarrative: logLines
+  };
+
+  let html = '';
+  html += `<div class="stat-row"><span class="stat-label">Trazos compuestos</span><span class="stat-value ${strokes.length > 1 ? 'ok' : ''}">${strokes.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Puntos totales</span><span class="stat-value">${points.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Duración total</span><span class="stat-value">${totalTime.toFixed(2)}s</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Longitud total</span><span class="stat-value">${Math.round(totalLength)}px</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Rectitud global</span><span class="stat-value ${straightness > 0.9 ? 'ok' : ''}">${straightness.toFixed(3)}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Velocidad promedio</span><span class="stat-value">${avgSpeed.toFixed(1)} px/s</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Velocidad máxima</span><span class="stat-value">${maxSpeed.toFixed(1)} px/s</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Cambio ángulo promedio</span><span class="stat-value">${avgAngleChange.toFixed(1)}°</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Giros bruscos (>45°)</span><span class="stat-value ${sharpTurns > 0 ? 'alert' : ''}">${sharpTurns}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Curvas suaves (15-45°)</span><span class="stat-value ${smoothCurves > 0 ? 'ok' : ''}">${smoothCurves}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Intersecciones</span><span class="stat-value ${intersections.length > 0 ? 'alert' : ''}">${intersections.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Bucles cerrados</span><span class="stat-value ${loops.length > 0 ? 'ok' : ''}">${loops.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Área bounding box</span><span class="stat-value">${Math.round(area)}px²</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Densidad</span><span class="stat-value">${density.toFixed(4)}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Entropía espacial</span><span class="stat-value">${entropy.toFixed(2)}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">Relación ancho/alto</span><span class="stat-value">${(width/Math.max(height,1)).toFixed(2)}</span></div>`;
+
+  if (strokeMeta.length > 0) {
+    html += `<div style="margin-top:12px; border-top:1px solid #222; padding-top:8px;"><h3 style="font-size:10px; color:#666; margin-bottom:8px;">Trazos individuales</h3>`;
+    strokeMeta.forEach(s => {
+      html += `<div class="stat-row"><span class="stat-label">Trazo ${s.strokeIndex}${s.isDot ? ' (punto)' : ''}</span><span class="stat-value">${s.length}px · ${s.duration}s · rect=${s.rectitude}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (phases.length > 0) {
+    html += `<div style="margin-top:12px; border-top:1px solid #222; padding-top:8px;"><h3 style="font-size:10px; color:#666; margin-bottom:8px;">Fases detectadas</h3>`;
+    phases.forEach(p => {
+      html += `<div class="stat-row"><span class="stat-label">${p.label}</span><span class="stat-value">${p.duration}s (${p.relStart}-${p.relEnd}) · ${p.pointCount}pts</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  summaryEl.innerHTML = html;
+  miniPreview.innerHTML = `<img src="${pngUrl}" alt="gesto" style="background:#111; border:1px solid #222;">`;
+
+  exportArea.innerHTML = `
+    <a href="${pngUrl}" download="ologa-gesto-${Date.now()}.png">↓ Descargar PNG (trazo + intersecciones)</a>
+    <button class="link" id="btn-export-json">↓ Descargar JSON (datos completos)</button>
+    <button class="link" id="btn-export-txt">↓ Descargar TXT (narración)</button>
+  `;
+
+  document.getElementById('btn-export-json').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(analysisData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ologa-gesto-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('btn-export-txt').addEventListener('click', () => {
+    let txt = `OLOGA — NARRACIÓN DEL GESTO
+`;
+    txt += `Generado: ${analysisData.timestamp}
+`;
+    txt += `========================================
+
+`;
+    txt += `RESUMEN NUMÉRICO:
+`;
+    txt += `- Trazos compuestos: ${analysisData.gesture.totalStrokes}
+`;
+    txt += `- Puntos totales: ${analysisData.gesture.totalPoints}
+`;
+    txt += `- Duración: ${analysisData.gesture.totalDuration}s
+`;
+    txt += `- Longitud: ${analysisData.gesture.totalLength}px
+`;
+    txt += `- Rectitud: ${analysisData.gesture.straightness}
+`;
+    txt += `- Intersecciones: ${analysisData.gesture.intersections}
+`;
+    txt += `- Bucles: ${analysisData.gesture.loops}
+
+`;
+    txt += `TRAZOS INDIVIDUALES:
+`;
+    analysisData.strokes.forEach(s => {
+      txt += `  [${s.strokeIndex}] ${s.isDot ? 'PUNTO' : 'TRAZO'}: ${s.length}px, ${s.duration}s, rect=${s.rectitude}
+`;
+      txt += `       inicio: (${s.startPos.x},${s.startPos.y}) → fin: (${s.endPos.x},${s.endPos.y})
+`;
+    });
+    txt += `
+FASES:
+`;
+    analysisData.phases.forEach(p => {
+      txt += `  ${p.label}: ${p.duration}s (${p.relStart}-${p.relEnd})
+`;
+    });
+    txt += `
+NARRACIÓN EN TIEMPO REAL:
+`;
+    analysisData.rawNarrative.forEach(line => {
+      txt += `  ${line}
+`;
+    });
+
+    const blob = new Blob([txt], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ologa-gesto-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+// ========== EVENTOS DE DIBUJO — UNIVERSAL (POINTER + TOUCH FALLBACK) ==========
+
+function onPointerDown(e) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Solo permitir un dedo activo
+  if (isDrawing && activePointerId !== null && activePointerId !== e.pointerId) return;
+
+  cancelFinishTimer();
+
+  if (!gestureActive) {
+    gestureActive = true;
+    gestureStartTime = performance.now();
+    points = [];
+    strokes = [];
+    logLines = [];
+    logEl.innerHTML = '';
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    addLog(`=== NUEVO GESTO ===`, 'phase');
+  }
+
+  isDrawing = true;
+  activePointerId = e.pointerId;
+
+  const pos = getPointerPos(e);
+  strokes.push([pos]);
+  currentStrokeIdx = strokes.length - 1;
+  points.push(pos);
+
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+
+  addLog(`POINTER DOWN #${strokes.length}: (${Math.round(pos.x)}, ${Math.round(pos.y)})`, 'stroke-divider');
+  updateStatus();
+}
+
+function onPointerMove(e) {
+  if (!isDrawing || e.pointerId !== activePointerId) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  const pos = getPointerPos(e);
+  const last = points[points.length - 1];
+  const d = dist(last, pos);
+
+  if (d < 2) return;
+
+  points.push(pos);
+  strokes[currentStrokeIdx].push(pos);
+
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
+
+  const dt = (pos.t - last.t) / 1000;
+  const speed = d / Math.max(dt, 0.001);
+  const dir = angle(last, pos);
+
+  const stroke = strokes[currentStrokeIdx];
+  if (stroke.length > 2) {
+    const prev = stroke[stroke.length - 3];
+    const a1 = angle(prev, last);
+    const a2 = angle(last, pos);
+    let curve = Math.abs(a2 - a1);
+    if (curve > 180) curve = 360 - curve;
+
+    let note = '';
+    if (curve > 60) note = 'CURVA FUERTE';
+    else if (curve > 20) note = 'curva suave';
+    else note = 'recto';
+
+    if (speed > 8) note += ' | RÁPIDO';
+    else if (speed < 1) note += ' | lento';
+
+    addLog(`t=${(pos.t - gestureStartTime).toFixed(0)}ms | v=${speed.toFixed(1)} | θ=${dir.toFixed(0)}° | curv=${curve.toFixed(0)}° | ${note}`);
+  }
+
+  updateStatus();
+}
+
+function onPointerUp(e) {
+  if (!isDrawing || e.pointerId !== activePointerId) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  isDrawing = false;
+  activePointerId = null;
+
+  const stroke = strokes[currentStrokeIdx];
+  addLog(`POINTER UP #${strokes.length}: ${stroke.length} puntos`, 'stroke-divider');
+  addLog(`Esperando siguiente trazo... (2s)`, 'phase');
+
+  updateStatus();
+  startFinishTimer();
+}
+
+function onPointerCancel(e) {
+  if (e.pointerId !== activePointerId) return;
+  isDrawing = false;
+  activePointerId = null;
+  addLog(`POINTER CANCEL #${strokes.length}`, 'highlight');
+  updateStatus();
+  startFinishTimer();
+}
+
+// Registrar eventos con passive: false para poder preventDefault
+canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+canvas.addEventListener('pointerup', onPointerUp, { passive: false });
+canvas.addEventListener('pointercancel', onPointerCancel, { passive: false });
+
+// Fallback táctil explícito para navegadores que no soportan pointer events bien
+function handleTouch(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+canvas.addEventListener('touchstart', handleTouch, { passive: false });
+canvas.addEventListener('touchmove', handleTouch, { passive: false });
+canvas.addEventListener('touchend', handleTouch, { passive: false });
+
+// Botones
+document.getElementById('btn-clear').addEventListener('click', clearAll);
+document.getElementById('btn-finish').addEventListener('click', () => {
+  if (gestureActive) {
+    addLog(`Finalizado manualmente`, 'highlight');
+    finishGesture();
+  }
+});
+
+// Prevenir scroll y zoom en toda la página
+document.addEventListener('touchmove', (e) => {
+  if (gestureActive) e.preventDefault();
+}, { passive: false });
+
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('gesturechange', (e) => e.preventDefault());
+document.addEventListener('gestureend', (e) => e.preventDefault());
+
+// Prevenir zoom con doble tap
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+</script>
+</body>
+</html>
